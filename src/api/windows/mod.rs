@@ -24,6 +24,7 @@ use windows_sys::Win32::{
         },
     },
 };
+use windows_sys::Win32::UI::WindowsAndMessaging::{GetMenuItemCount, GetMenuItemID, SetMenuItemInfoW};
 
 use crate::TIError;
 use funcs::*;
@@ -113,7 +114,7 @@ impl TrayItemWindows {
         self.set_icon_from_resource(icon)
     }
 
-    pub fn add_label(&mut self, label: &str) -> Result<(), TIError> {
+    pub fn add_label(&mut self, label: &str) -> Result<u32, TIError> {
         let item_idx = padlock::mutex_lock(&self.entries, |entries| {
             let len = entries.len();
             entries.push(None);
@@ -133,6 +134,35 @@ impl TrayItemWindows {
         unsafe {
             if InsertMenuItemW(self.info.hmenu, item_idx, 1, &item) == 0 {
                 return Err(get_win_os_error("Error inserting menu item"));
+            }
+        }
+        Ok(item_idx)
+    }
+    
+    pub fn change_label(&mut self, label: &str, item_idx: u32) -> Result<(),TIError>{
+        let mut st = to_wstring(label);
+
+        let mut item = unsafe { mem::zeroed::<MENUITEMINFOW>() };
+        item.cbSize = mem::size_of::<MENUITEMINFOW>() as u32;
+        item.fMask = MIIM_FTYPE | MIIM_STRING | MIIM_ID | MIIM_STATE;
+        item.fType = MFT_STRING;
+        item.fState = MFS_DISABLED | MFS_UNHILITE;
+        item.dwTypeData = st.as_mut_ptr();
+        item.cch = (label.len() * 2) as u32;
+
+        let item_count = unsafe {GetMenuItemCount(self.info.hmenu)};
+
+
+
+        for i in 0..item_count{
+            let menu_id = unsafe {GetMenuItemID(self.info.hmenu,i)};
+
+            if menu_id == item_idx{
+                unsafe {
+                    if SetMenuItemInfoW(self.info.hmenu,menu_id,1,&item) == 0{
+                        return Err(get_win_os_error("Error changing menu item."));
+                    }
+                }
             }
         }
         Ok(())
